@@ -15,6 +15,7 @@ wss.on('connection', (ws) => {
     console.log('New connection established.');
 
     ws.on('message', (message) => {
+        // Handle registration messages
         const msgStr = message.toString().trim();
 
         if (msgStr === 'register_agent') {
@@ -28,13 +29,25 @@ wss.on('connection', (ws) => {
             return;
         }
 
-        // If message comes from the agent, broadcast to all viewers
+        // 1. If message comes from the AGENT, broadcast screen frames to all viewers
         if (ws === agentConnection) {
             for (let viewer of viewers) {
                 if (viewer.readyState === WebSocket.OPEN) {
-                    viewer.send(message);
+                    // Prevent buffer congestion lag
+                    if (viewer.bufferedAmount < 1024 * 1024) {
+                        viewer.send(message);
+                    }
                 }
             }
+            return;
+        }
+
+        // 2. If message comes from a VIEWER, forward mouse/keyboard commands to the agent
+        if (viewers.has(ws)) {
+            if (agentConnection && agentConnection.readyState === WebSocket.OPEN) {
+                agentConnection.send(message);
+            }
+            return;
         }
     });
 
@@ -43,7 +56,10 @@ wss.on('connection', (ws) => {
             console.log('>>> RMM Agent Disconnected');
             agentConnection = null;
         }
-        viewers.delete(ws);
+        if (viewers.has(ws)) {
+            console.log('>>> Viewer Disconnected');
+            viewers.delete(ws);
+        }
     });
 });
 
